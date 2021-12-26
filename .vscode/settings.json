@@ -5,6 +5,11 @@
         "**/templates/**/*": "django-txt",
         "**/requirements{/**,*}.{txt,in}": "pip-requirements",
         "iostream": "cpp",
-        "iosfwd": "cpp"
+        "iosfwd": "cpp",
+        "bitset": "cpp",
+        "vector": "cpp",
+        "unordered_map": "cpp",
+        "random": "cpp",
+        "ostream": "cpp"
     }
 }

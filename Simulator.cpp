@@ -9,8 +9,9 @@
 using namespace std;
 
 unordered_map<string, int> REGISTER_TABLE; // 暫存器號碼對照表
+int numOfInstructions = 0;                 // 紀錄指令數量
 
-vector<vector<string>> getInstructions(const string &path)
+void readInstructions(const string &path, Memory &memory)
 {
     /**
      *  讀取指令(每個指令會被拆解為小部分)
@@ -21,16 +22,15 @@ vector<vector<string>> getInstructions(const string &path)
      *  sw:  sw, rt, offset, rs
     */
 
-    fstream infile(path);                // 讀檔
-    vector<vector<string>> instructions; // 指令
-    stringstream ss;                     // 協助文字處理(stringstream能自動切空格)
-    string line;                         // 讀取的一行文字
-    string word;                         // 每行文字裡的字
+    fstream infile(path); // 讀檔
+    stringstream ss;      // 協助文字處理(stringstream能自動切空格)
+    string line;          // 讀取的一行文字
+    string word;          // 每行文字裡的字
 
     if (!infile.is_open())
     {
         cout << "Failed to open file\n";
-        return instructions;
+        return;
     }
 
     while (getline(infile, line))
@@ -45,7 +45,6 @@ vector<vector<string>> getInstructions(const string &path)
         {
             result[index] = word;
             index++;
-            // cout << word << endl;
         }
 
         // 去除多餘符號
@@ -81,12 +80,11 @@ vector<vector<string>> getInstructions(const string &path)
             result[3] = reg;
         }
 
-        instructions.push_back(result);
+        memory.instructions[numOfInstructions] = result;
+        numOfInstructions++;
     }
 
     infile.close(); // 關檔
-
-    return instructions;
 }
 
 // 建立對照表
@@ -102,7 +100,7 @@ void buildTable()
 // 輸出所有指令(debug用)
 void printInstructions(const vector<vector<string>> &instructions)
 {
-    for (int i = 0; i < instructions.size(); i++)
+    for (int i = 0; i < numOfInstructions; i++)
     {
         for (int j = 0; j < instructions[i].size(); j++)
         {
@@ -115,26 +113,18 @@ void printInstructions(const vector<vector<string>> &instructions)
 int main()
 {
     buildTable();
-    // 指令
-    vector<vector<string>> instructions = getInstructions("test.txt");
-    // 階段是否完成
-    bool IFFinish = false;
-    bool IDFinish = false;
-    bool EXEFinish = false;
-    bool MEMFinish = false;
-    bool WBFinish = false;
-    // beq預測結果是否正確
-    bool predict = false;
-    // register file
-    RegisterFile registerFile;
     // 記憶體
     Memory memory;
-    // cycle計數器
-    int counter = 1;
+    // 讀取指令
+    readInstructions("memory.txt", memory);
+    // beq是否要taken
+    bool taken = false;
+    // register file
+    RegisterFile registerFile;
+    // cycle數
+    int cycle = 1;
     // stall計數器
-    int stallCounter = 0;
-    // 指令計數器
-    int instructionCounter = 0;
+    int stall = 0;
     // 寫檔
     fstream outfile("result.txt", ios::out);
     // 五個階段
@@ -149,57 +139,64 @@ int main()
     // 執行
     while (true)
     {
-        outfile << "Cycle " << counter << endl;
+        outfile << "Cycle " << cycle << endl;
 
-        // 從WB階段開始是為了讓先進入的指令先往下做，否則新進入的指令會將上一個指令的資訊蓋掉
+        // 從WB階段開始是為了讓先進入的指令先往下做，不然會變single cycle
         // 執行WB
-        if (!WBFinish)
+        if (!wbStage.finish)
         {
-            wbStage.writeBack(outfile, registerFile, executings); // 寫回暫存器
-            WBFinish = true;                                      // 寫完
+            wbStage.writeBack(outfile, registerFile, executings, memStage);
         }
 
         // 執行MEM
-        if (!MEMFinish)
+        if (!memStage.finish)
         {
-            // MEM();
+            memStage.accessMemory(outfile, executings, registerFile, memory.data, stall, exeStage, wbStage.finish);
         }
 
         // 執行EXE
-        if (!EXEFinish)
+        if (!exeStage.finish)
         {
-            // EXE();
+            exeStage.execute(outfile, executings, registerFile, stall, taken, ifStage, idStage, memStage.finish);
         }
 
         // 執行ID
-        if (!IDFinish || stallCounter > 0)
+        if (!idStage.finish || stall > 0)
         {
-            // ID();
+            idStage.decode(outfile, executings, registerFile, stall, REGISTER_TABLE, exeStage.control, exeStage.rd, memStage.control, memStage.rd, taken, exeStage.finish);
         }
 
         // 抓完所有指令了
-        if (instructionCounter == instructions.size())
+        if (ifStage.pc == numOfInstructions)
         {
-            IFFinish = true;
+            ifStage.finish = true;
         }
         else // 執行IF(測試完成)
         {
-            ifStage.fetch(outfile, instructions, executings); // 抓取指令
-            IFFinish = true;                                  // 抓完指令
-            IDFinish = false;                                 // 準備開始ID
+            // 抓取指令
+            ifStage.fetch(outfile, memory.instructions, executings, stall, idStage.finish);
+        }
+
+        // cout << "instruction: " << executings[0][0] << " pc: " << ifStage.pc << endl;
+
+        // 當全部階段做完時，stall完成一次
+        // cout << stall << endl;
+        if (stall > 0)
+        {
+            stall--;
         }
 
         // 全部執行結束
-        if (IFFinish && IDFinish && EXEFinish && MEMFinish && WBFinish)
+        if (ifStage.finish && idStage.finish && exeStage.finish && memStage.finish && wbStage.finish)
         {
             break;
         }
-        counter++;
+        cycle++;
     }
 
     // 將剩餘資訊補上
     outfile << endl;
-    outfile << "需要花" << counter << "個cycles" << endl;
+    outfile << "需要花" << cycle << "個cycles" << endl;
 
     // 暫存器號碼
     for (int i = 0; i < 32; i++)
@@ -211,7 +208,7 @@ int main()
     // 暫存器的值
     for (int i = 0; i < 32; i++)
     {
-        outfile << registerFile.registers[i].to_ulong() << "\t";
+        outfile << registerFile.registers[i] << "\t";
     }
     outfile << endl;
 
@@ -225,7 +222,7 @@ int main()
     // 記憶體的值
     for (int i = 0; i < 32; i++)
     {
-        outfile << memory.memory[i].to_ulong() << "\t";
+        outfile << memory.data[i] << "\t";
     }
     outfile << endl;
 

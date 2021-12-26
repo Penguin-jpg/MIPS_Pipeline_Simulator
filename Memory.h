@@ -2,21 +2,23 @@
 #define MEMORY_H
 
 #include <vector>
-#include <bitset>
+#include <string>
 using namespace std;
 
 struct Memory
 {
-    vector<bitset<32>> memory;
+    vector<int> data;
+    vector<vector<string>> instructions; // 指令
 
     Memory()
     {
-        memory.resize(32); // 32個word
+        data.resize(32);           // 32個word
+        instructions.resize(1000); // 預設1000個指令
 
         // 每個word初始值為1
         for (int i = 0; i < 32; i++)
         {
-            memory[i] = bitset<32>(1);
+            data[i] = 1;
         }
     }
 };
