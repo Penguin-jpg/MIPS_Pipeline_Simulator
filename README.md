@@ -17,7 +17,6 @@
 測試完成
 
 #### not-taken
-失敗
+測試成功
 
-#### 參考該程式碼並試著用自己的邏輯重現
-https://github.com/john850512/MIPS_Simulator/blob/master/Code
+

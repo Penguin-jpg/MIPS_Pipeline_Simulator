@@ -1,61 +1,46 @@
 Cycle 1
-	lw: IF
+	sub: IF
 Cycle 2
-	lw: ID
+	sub: ID
 	beq: IF
 Cycle 3
-	lw: EX 01 010 11
-EX hazard here
+	sub: EX 10 000 10
 	beq: ID
 	add: IF
 Cycle 4
-	lw: MEM 010 11
+	sub: MEM 000 10
 	beq: ID
 	add: IF
 Cycle 5
-	lw: WB 11
-control hazard here
+	sub: WB 10
 	beq: ID
 	add: IF
 Cycle 6
 	beq: EX X0 100 0X
-taken!!
-	sub: IF
+	add: ID
+	lw: IF
 Cycle 7
 	beq: MEM 100 0X
-	sub: ID
-	beq: IF
+	add: EX 10 000 10
+	lw: ID
+	add: IF
 Cycle 8
 	beq: WB 0X
-	sub: EX 10 000 10
-EX hazard here
-	beq: ID
-	sw: IF
+	add: MEM 000 10
+	lw: EX 01 010 11
+	add: ID
 Cycle 9
-	sub: MEM 000 10
-	beq: ID
-	sw: IF
+	add: WB 10
+	lw: MEM 010 11
+	add: EX 10 000 10
 Cycle 10
-	sub: WB 10
-control hazard here
-	beq: ID
-	sw: IF
+	lw: WB 11
+	add: MEM 000 10
 Cycle 11
-	beq: EX X0 100 0X
-	sw: IF
-Cycle 12
-	beq: MEM 100 0X
-	sw: ID
-Cycle 13
-	beq: WB 0X
-	sw: EX X1 001 0X
-Cycle 14
-	sw: MEM 001 0X
-Cycle 15
-	sw: WB 0X
+	add: WB 10
 
-需要花15個cycles
+需要花11個cycles
 $0	$1	$2	$3	$4	$5	$6	$7	$8	$9	$10	$11	$12	$13	$14	$15	$16	$17	$18	$19	$20	$21	$22	$23	$24	$25	$26	$27	$28	$29	$30	$31	
-0	1	1	1	0	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	
+0	1	2	1	2	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	
 W0	W1	W2	W3	W4	W5	W6	W7	W8	W9	W10	W11	W12	W13	W14	W15	W16	W17	W18	W19	W20	W21	W22	W23	W24	W25	W26	W27	W28	W29	W30	W31	
-1	1	0	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	
+1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	

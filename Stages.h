@@ -22,12 +22,6 @@ struct IFStage
     // 抓取指令
     void fetch(fstream &outfile, const vector<vector<string>> &instructions, vector<vector<string>> &executings, int stall, bool &idFinish)
     {
-        /**
-         * outfile: 寫出的資料流
-         * instructions: 指令記憶體
-         * executings: 正在執行的指令
-        */
-
         finish = false; // IF階段開始
 
         outfile << "\t" << instructions[pc][0] << ": IF" << endl;
@@ -35,7 +29,6 @@ struct IFStage
         // 如果要stall
         if (stall > 0)
         {
-            // cout << "after beq\n";
             finish = false;
             idFinish = false;
             return;
@@ -46,11 +39,10 @@ struct IFStage
         {
             executings[0][i] = instructions[pc][i];
             executings[1][i] = executings[0][i]; // 抓取的指令傳給ID階段
-            // executings[0][i] = "";               // 指令抓完了
+            executings[0][i] = "";               // 清除指令避免影響後續判斷
         }
 
-        // cout << "instruction: " << executings[1][0] << " pc: " << pc << endl;s
-
+        // debug
         // cout << "if: "
         //      << "pc: " << pc << endl;
         // for (int i = 0; i < 4; i++)
@@ -86,6 +78,7 @@ struct IDStage
     void decode(fstream &outfile, vector<vector<string>> &executings, RegisterFile &registerFile, int &stall,
                 unordered_map<string, int> &REGISTER_TABLE, Control &exeControl, int exeRd, Control &memControl, int memRd, bool &taken, bool &exeFinish)
     {
+        // debug
         // cout << "id: " << endl;
         // for (int i = 0; i < 4; i++)
         // {
@@ -100,6 +93,7 @@ struct IDStage
          * 2: beq
         */
         int type = 0;
+        bool wait = false; // 是否需要因taken而做一次stall
 
         // 如果要stall
         if (stall > 0)
@@ -127,7 +121,7 @@ struct IDStage
             }
             catch (...)
             {
-                cout << "exception here 1" << endl;
+                cout << "lw or sw gone wrong" << endl;
             }
 
             rs = -1; // 因為題目設計的關係，所以不用讀取
@@ -144,17 +138,9 @@ struct IDStage
             }
             catch (...)
             {
-                cout << "exception here 2" << endl;
-                outfile << "exception here 2" << endl;
+                cout << "beq gone wrong" << endl;
             }
             rd = rt;
-
-            cout << "id: " << endl;
-            for (int i = 0; i < 4; i++)
-            {
-                cout << executings[1][i] << " ";
-            }
-            cout << endl;
         }
 
         // 使用對應的控制信號
@@ -187,9 +173,15 @@ struct IDStage
         case 2:
             operation = "beq";
             control.controlForBeq();
+
+            // beq移到在ID得知
+            if (registerFile.registers[rs] == registerFile.registers[rt])
+            {
+                wait = true;
+            }
         }
 
-        detectHazard(outfile, exeControl, exeRd, memControl, memRd, stall, taken); // 偵測hazard
+        detectHazard(outfile, exeControl, exeRd, memControl, memRd, stall, wait); // 偵測hazard
 
         // 如果是taken
         if (taken)
@@ -214,7 +206,7 @@ struct IDStage
             for (int i = 0; i < 4; i++)
             {
                 executings[2][i] = executings[1][i]; // 將指令傳到EXE階段
-                executings[1][i] = "";
+                executings[1][i] = "";               // 清除指令避免影響後續判斷
             }
         }
 
@@ -223,25 +215,24 @@ struct IDStage
     }
 
     // 偵測hazard(先EX hazard就好)
-    void detectHazard(fstream &outfile, Control &exeControl, int exeRd, Control &memControl, int memRd, int &stall, bool taken)
+    void detectHazard(fstream &outfile, Control &exeControl, int exeRd, Control &memControl, int memRd, int &stall, bool wait)
     {
-        // cout << "rd: " << exeRd << " rs: " << rs << " rt: " << rt << endl;
         // EX hazard
         if (exeControl.regWrite && (exeRd == rs || exeRd == rt))
         {
-            outfile << "EX hazard here" << endl;
+            // outfile << "EX hazard here" << endl;
             stall = 2;       // 做兩次stall
             control.flush(); // 控制信號做flush
         }
         else if (memControl.regWrite && (memRd == rs || memRd == rt)) // MEM hazard(只有在確定不是EX hazard的時候才做)
         {
-            outfile << "MEM hazard here" << endl;
+            // outfile << "MEM hazard here" << endl;
             stall = 2;
             control.flush();
         }
-        else if (operation == "beq") // control hazard
+        else if (wait) // control hazard (只有在條件成立時才需stall)
         {
-            outfile << "control hazard here" << endl;
+            // outfile << "wait here" << endl;
             stall = 1; // 做stall，等待beq結果
             // 控制信號不做flush，因為beq到EXE階段時，ID階段是閒置狀態，不會有人傳資訊給beq
         }
@@ -270,12 +261,14 @@ struct EXEStage
         // 如果指令不為空
         if (executings[2][0] != "")
         {
+            // debug
             // cout << "exe: " << endl;
             // for (int i = 0; i < 4; i++)
             // {
             //     cout << executings[2][i] << " ";
             // }
             // cout << endl;
+
             // 將資訊傳給EXE
             control = idStage.control;
             rs = idStage.rs;
@@ -291,7 +284,7 @@ struct EXEStage
             for (int i = 0; i < 4; i++)
             {
                 executings[3][i] = executings[2][i];
-                executings[2][i] = "";
+                executings[2][i] = ""; // 清除指令避免影響後續判斷
             }
         }
 
@@ -310,18 +303,14 @@ struct EXEStage
         }
         else if (operation == "beq")
         {
-            // cout << "[rs]: " << registerFile.registers[rs] << " [rt]:" << registerFile.registers[rt] << endl;
-            // beq的結果在ID得知
+            // 當taken時，啟動zero控制信號
             if (registerFile.registers[rs] == registerFile.registers[rt])
             {
                 zero = true;
             }
             if (control.branch && zero)
             {
-                outfile << "taken!!" << endl;
-                // cout << "!!\n"
-                //      << endl;
-                // cout << "offset: " << offset << endl;
+                // outfile << "taken!!" << endl;
                 ifStage.pc += offset;
                 taken = true;
             }
@@ -366,12 +355,14 @@ struct MEMStage
     // 存取記憶體
     void accessMemory(fstream &outfile, vector<vector<string>> &executings, RegisterFile &registerFile, vector<int> &data, int &stall, EXEStage &exeStage, bool &wbFinish)
     {
+        // debug
         // cout << "mem: " << endl;
         // for (int i = 0; i < 4; i++)
         // {
         //     cout << executings[3][i] << " ";
         // }
         // cout << endl;
+
         // 如果指令不為空
         if (executings[3][0] != "")
         {
@@ -391,7 +382,7 @@ struct MEMStage
             for (int i = 0; i < 4; i++)
             {
                 executings[4][i] = executings[3][i];
-                executings[3][i] = "";
+                executings[3][i] = ""; // 清除指令避免影響後續判斷
             }
         }
 
@@ -409,6 +400,7 @@ struct MEMStage
         wbFinish = false; // WB階段開始
     }
 
+    // 初始化
     void init()
     {
         rd = 0;
@@ -434,12 +426,14 @@ struct WBStage
     // 寫回暫存器
     void writeBack(fstream &outfile, RegisterFile &registerFile, vector<vector<string>> &executings, MEMStage &memStage)
     {
+        // debug
         // cout << "wb: " << endl;
         // for (int i = 0; i < 4; i++)
         // {
         //     cout << executings[4][i] << " ";
         // }
         // cout << endl;
+
         // 如果指令不為空
         if (executings[4][0] != "")
         {
@@ -453,7 +447,7 @@ struct WBStage
             memStage.init();
 
             outfile << "\t" << executings[4][0] << ": WB " << control.regWrite << control.memToReg << endl;
-            executings[4][0] = ""; // 指令完成
+            executings[4][0] = ""; // 清除指令避免影響後續判斷
         }
 
         // 如果需要寫入暫存器

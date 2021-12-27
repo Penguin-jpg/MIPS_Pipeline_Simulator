@@ -177,10 +177,7 @@ int main()
             ifStage.fetch(outfile, memory.instructions, executings, stall, idStage.finish);
         }
 
-        // cout << "instruction: " << executings[0][0] << " pc: " << ifStage.pc << endl;
-
         // 當全部階段做完時，stall完成一次
-        // cout << stall << endl;
         if (stall > 0)
         {
             stall--;
