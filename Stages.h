@@ -8,7 +8,7 @@
 #include <unordered_map>
 #include "Control.h"
 #include "RegisterFile.h"
-#include <stdlib.h>
+#include "Utility.h"
 using namespace std;
 
 // IF階段(包含IF/ID)
@@ -76,7 +76,7 @@ struct IDStage
 
     // 解碼指令
     void decode(fstream &outfile, vector<vector<string>> &executings, RegisterFile &registerFile, int &stall,
-                unordered_map<string, int> &REGISTER_TABLE, Control &exeControl, int exeRd, Control &memControl, int memRd, bool &taken, bool &exeFinish)
+                Control &exeControl, int exeRd, Control &memControl, int memRd, bool &taken, bool &exeFinish)
     {
         // debug
         // cout << "id: " << endl;
