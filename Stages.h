@@ -181,7 +181,7 @@ struct IDStage
             }
         }
 
-        detectHazard(outfile, exeControl, exeRd, memControl, memRd, stall, wait); // 偵測hazard
+        detectHazard(exeControl, exeRd, memControl, memRd, stall, wait); // 偵測hazard
 
         // 如果是taken
         if (taken)
@@ -214,25 +214,22 @@ struct IDStage
         exeFinish = false; // EXE階段開始
     }
 
-    // 偵測hazard(先EX hazard就好)
-    void detectHazard(fstream &outfile, Control &exeControl, int exeRd, Control &memControl, int memRd, int &stall, bool wait)
+    // 偵測hazard
+    void detectHazard(Control &exeControl, int exeRd, Control &memControl, int memRd, int &stall, bool wait)
     {
         // EX hazard
         if (exeControl.regWrite && (exeRd == rs || exeRd == rt))
         {
-            // outfile << "EX hazard here" << endl;
             stall = 2;       // 做兩次stall
             control.flush(); // 控制信號做flush
         }
         else if (memControl.regWrite && (memRd == rs || memRd == rt)) // MEM hazard(只有在確定不是EX hazard的時候才做)
         {
-            // outfile << "MEM hazard here" << endl;
             stall = 2;
             control.flush();
         }
         else if (wait) // control hazard (只有在條件成立時才需stall)
         {
-            // outfile << "wait here" << endl;
             stall = 1; // 做stall，等待beq結果
             // 控制信號不做flush，因為beq到EXE階段時，ID階段是閒置狀態，不會有人傳資訊給beq
         }

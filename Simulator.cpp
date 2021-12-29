@@ -89,40 +89,8 @@ int main()
         cycle++;
     }
 
-    // 將剩餘資訊補上
-    outfile << endl;
-    outfile << "需要花" << cycle << "個cycles" << endl;
-
-    // 暫存器號碼
-    for (int i = 0; i < 32; i++)
-    {
-        outfile << "$" << i << "\t";
-    }
-    outfile << endl;
-
-    // 暫存器的值
-    for (int i = 0; i < 32; i++)
-    {
-        outfile << registerFile.registers[i] << "\t";
-    }
-    outfile << endl;
-
-    // 記憶體號碼
-    for (int i = 0; i < 32; i++)
-    {
-        outfile << "W" << i << "\t";
-    }
-    outfile << endl;
-
-    // 記憶體的值
-    for (int i = 0; i < 32; i++)
-    {
-        outfile << memory.data[i] << "\t";
-    }
-    outfile << endl;
-
-    // 關檔
-    outfile.close();
+    // 寫出剩餘資訊
+    writeInfo(outfile, registerFile, memory, cycle);
 
     return 0;
 }

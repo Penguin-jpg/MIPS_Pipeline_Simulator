@@ -7,6 +7,8 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include "RegisterFile.h"
+#include "Memory.h"
 using namespace std;
 
 unordered_map<string, int> REGISTER_TABLE; // 暫存器號碼對照表
@@ -110,6 +112,44 @@ void printInstructions(const vector<vector<string>> &instructions)
         }
         cout << endl;
     }
+}
+
+// 將剩餘資訊寫出
+void writeInfo(fstream &outfile, const RegisterFile &registerFile, const Memory &memory, int cycle)
+{
+    outfile << endl;
+    outfile << "需要花" << cycle << "個cycles" << endl;
+
+    // 暫存器號碼
+    for (int i = 0; i < 32; i++)
+    {
+        outfile << "$" << i << "\t";
+    }
+    outfile << endl;
+
+    // 暫存器的值
+    for (int i = 0; i < 32; i++)
+    {
+        outfile << registerFile.registers[i] << "\t";
+    }
+    outfile << endl;
+
+    // 記憶體號碼
+    for (int i = 0; i < 32; i++)
+    {
+        outfile << "W" << i << "\t";
+    }
+    outfile << endl;
+
+    // 記憶體的值
+    for (int i = 0; i < 32; i++)
+    {
+        outfile << memory.data[i] << "\t";
+    }
+    outfile << endl;
+
+    // 關檔
+    outfile.close();
 }
 
 #endif
