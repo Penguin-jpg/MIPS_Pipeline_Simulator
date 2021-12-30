@@ -24,7 +24,7 @@ struct IFStage
     {
         finish = false; // IF階段開始
 
-        outfile << "\t" << instructions[pc][0] << ": IF" << endl;
+        outfile << "\t" << instructions[pc][0] << ": IF\n";
 
         // 如果要stall
         if (stall > 0)
@@ -34,13 +34,9 @@ struct IFStage
             return;
         }
 
-        // 儲存正在執行的指令
-        for (int i = 0; i < 4; i++)
-        {
-            executings[0][i] = instructions[pc][i];
-            executings[1][i] = executings[0][i]; // 抓取的指令傳給ID階段
-            executings[0][i] = "";               // 清除指令避免影響後續判斷
-        }
+        executings[0] = instructions[pc]; // 儲存正在執行的指令
+        executings[1] = executings[0];    // 抓取的指令傳給ID階段
+        executings[0][0] = "";            // 清除指令避免影響後續判斷
 
         // debug
         // cout << "if: "
@@ -86,92 +82,81 @@ struct IDStage
         // }
         // cout << endl;
 
-        /**
-         * 指令類型
-         * 0: R-Format
-         * 1: lw, sw
-         * 2: beq
-        */
-        int type = 0;
         bool wait = false; // 是否需要因taken而做一次stall
 
         // 如果要stall
         if (stall > 0)
         {
-            outfile << "\t" << executings[1][0] << ": ID" << endl; // 重複做ID
+            outfile << "\t" << executings[1][0] << ": ID\n"; // 重複做ID
             finish = false;
             return;
         }
 
-        // 取出變數
-        if (executings[1][0] == "add" || executings[1][0] == "sub")
+        // 取出變數並調整控制信號
+        if (executings[1][0] == "add")
         {
-            type = 0;
-            rd = REGISTER_TABLE[executings[1][1]];
-            rs = REGISTER_TABLE[executings[1][2]];
-            rt = REGISTER_TABLE[executings[1][3]];
+            operation = "add";
+            rd = getRegister(executings[1][1]);
+            rs = getRegister(executings[1][2]);
+            rt = getRegister(executings[1][3]);
+            control.controlForRFormat();
         }
-        else if (executings[1][0] == "lw" || executings[1][0] == "sw")
+        else if (executings[1][0] == "sub")
         {
-            type = 1;
-            rt = REGISTER_TABLE[executings[1][1]];
+            operation = "sub";
+            rd = getRegister(executings[1][1]);
+            rs = getRegister(executings[1][2]);
+            rt = getRegister(executings[1][3]);
+            control.controlForRFormat();
+        }
+        else if (executings[1][0] == "lw")
+        {
+            operation = "lw";
+            rt = getRegister(executings[1][1]);
             try
             {
                 offset = stol(executings[1][2]) / 4; // 除以4轉位置
             }
             catch (...)
             {
-                cout << "lw or sw gone wrong" << endl;
+                cout << "lw gone wrong\n";
             }
 
             rs = -1; // 因為題目設計的關係，所以不用讀取
             rd = rt; // 為了hazard判斷，讓rd=rt
+            control.controlForLw();
+        }
+        else if (executings[1][0] == "sw")
+        {
+            operation = "sw";
+            rt = getRegister(executings[1][1]);
+            try
+            {
+                offset = stol(executings[1][2]) / 4; // 除以4轉位置
+            }
+            catch (...)
+            {
+                cout << "sw gone wrong\n";
+            }
+
+            rs = -1; // 因為題目設計的關係，所以不用讀取
+            rd = rt; // 為了hazard判斷，讓rd=rt
+            control.controlForSw();
         }
         else if (executings[1][0] == "beq")
         {
-            type = 2;
-            rt = REGISTER_TABLE[executings[1][1]];
-            rs = REGISTER_TABLE[executings[1][2]];
+            operation = "beq";
+            rt = getRegister(executings[1][1]);
+            rs = getRegister(executings[1][2]);
             try
             {
                 offset = stol(executings[1][3]);
             }
             catch (...)
             {
-                cout << "beq gone wrong" << endl;
+                cout << "beq gone wrong\n";
             }
             rd = rt;
-        }
-
-        // 使用對應的控制信號
-        switch (type)
-        {
-        case 0:
-            if (executings[1][0] == "add")
-            {
-                operation = "add";
-            }
-            else
-            {
-                operation = "sub";
-            }
-
-            control.controlForRFormat();
-            break;
-        case 1:
-            if (executings[1][0] == "lw")
-            {
-                operation = "lw";
-                control.controlForLw();
-            }
-            else
-            {
-                operation = "sw";
-                control.controlForSw();
-            }
-            break;
-        case 2:
-            operation = "beq";
             control.controlForBeq();
 
             // beq移到在ID得知
@@ -181,33 +166,28 @@ struct IDStage
             }
         }
 
-        detectHazard(exeControl, exeRd, memControl, memRd, stall, wait); // 偵測hazard
+        // 偵測hazard
+        detectHazard(outfile, exeControl, exeRd, memControl, memRd, stall, wait);
 
         // 如果是taken
         if (taken)
         {
             // 原本抓的指令清掉
-            for (int i = 0; i < 4; i++)
-            {
-                executings[1][i] = "";
-            }
+            executings[1][0] = "";
             taken = false;
         }
 
         // 如果要做該指令
         if (executings[1][0] != "")
         {
-            outfile << "\t" << executings[1][0] << ": ID" << endl;
+            outfile << "\t" << executings[1][0] << ": ID\n";
         }
 
         // 如果不是stall數小於2(不需重做ID)
         if (stall < 2)
         {
-            for (int i = 0; i < 4; i++)
-            {
-                executings[2][i] = executings[1][i]; // 將指令傳到EXE階段
-                executings[1][i] = "";               // 清除指令避免影響後續判斷
-            }
+            executings[2] = executings[1]; // 將指令傳到EXE階段
+            executings[1][0] = "";         // 清除指令避免影響後續判斷
         }
 
         finish = true;     // ID階段完成
@@ -215,15 +195,17 @@ struct IDStage
     }
 
     // 偵測hazard
-    void detectHazard(Control &exeControl, int exeRd, Control &memControl, int memRd, int &stall, bool wait)
+    void detectHazard(fstream &outfile, Control &exeControl, int exeRd, Control &memControl, int memRd, int &stall, bool wait)
     {
-        // EX hazard
-        if (exeControl.regWrite && (exeRd == rs || exeRd == rt))
+        // EX hazard或load-use hazard
+        // load-use hazard也能在這邊檢查的原因是在沒有forwarding的情況下需要做2次stall
+        if ((exeControl.regWrite || exeControl.memRead) && exeRd != 0 && (exeRd == rs || exeRd == rt))
         {
+            // outfile << "load-use hazard here\n";
             stall = 2;       // 做兩次stall
             control.flush(); // 控制信號做flush
         }
-        else if (memControl.regWrite && (memRd == rs || memRd == rt)) // MEM hazard(只有在確定不是EX hazard的時候才做)
+        else if (memControl.regWrite && memRd != 0 && (memRd == rs || memRd == rt)) // MEM hazard(只有在確定不是EX hazard的時候才做)
         {
             stall = 2;
             control.flush();
@@ -275,14 +257,10 @@ struct EXEStage
             operation = idStage.operation;
 
             outfile << "\t" << executings[2][0] << ": EX " << control.regDst << control.ALUSrc << " " << control.branch
-                    << control.memRead << control.memWrite << " " << control.regWrite << control.memToReg << endl;
+                    << control.memRead << control.memWrite << " " << control.regWrite << control.memToReg << "\n";
 
-            // 將指令傳給MEM階段
-            for (int i = 0; i < 4; i++)
-            {
-                executings[3][i] = executings[2][i];
-                executings[2][i] = ""; // 清除指令避免影響後續判斷
-            }
+            executings[3] = executings[2]; // 將指令傳給MEM階段
+            executings[2][0] = "";         // 清除指令避免影響後續判斷
         }
 
         // 執行特定運算
@@ -373,14 +351,10 @@ struct MEMStage
             // 初始化EXE，避免影響後續判斷
             exeStage.init();
 
-            outfile << "\t" << executings[3][0] << ": MEM " << control.branch << control.memRead << control.memWrite << " " << control.regWrite << control.memToReg << endl;
+            outfile << "\t" << executings[3][0] << ": MEM " << control.branch << control.memRead << control.memWrite << " " << control.regWrite << control.memToReg << "\n";
 
-            // 將指令傳給WB階段
-            for (int i = 0; i < 4; i++)
-            {
-                executings[4][i] = executings[3][i];
-                executings[3][i] = ""; // 清除指令避免影響後續判斷
-            }
+            executings[4] = executings[3]; // 將指令傳給WB階段
+            executings[3][0] = "";         // 清除指令避免影響後續判斷
         }
 
         // 如果要讀取記憶體
@@ -443,7 +417,7 @@ struct WBStage
             // 初始化MEM，避免影響後續判斷
             memStage.init();
 
-            outfile << "\t" << executings[4][0] << ": WB " << control.regWrite << control.memToReg << endl;
+            outfile << "\t" << executings[4][0] << ": WB " << control.regWrite << control.memToReg << "\n";
             executings[4][0] = ""; // 清除指令避免影響後續判斷
         }
 

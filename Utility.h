@@ -87,8 +87,6 @@ void readInstructions(const string &path, vector<vector<string>> &instructions)
         instructions[numOfInstructions] = result;
         numOfInstructions++;
     }
-
-    infile.close(); // 關檔
 }
 
 // 建立對照表
@@ -101,6 +99,12 @@ void buildTable()
     }
 }
 
+// 取得暫存器號碼
+int getRegister(const string &key)
+{
+    return REGISTER_TABLE[key];
+}
+
 // 輸出所有指令(debug用)
 void printInstructions(const vector<vector<string>> &instructions)
 {
@@ -110,7 +114,7 @@ void printInstructions(const vector<vector<string>> &instructions)
         {
             cout << instructions[i][j] << " ";
         }
-        cout << endl;
+        cout << "\n";
     }
 }
 
@@ -118,38 +122,36 @@ void printInstructions(const vector<vector<string>> &instructions)
 void writeInfo(fstream &outfile, const RegisterFile &registerFile, const Memory &memory, int cycle)
 {
     outfile << endl;
-    outfile << "需要花" << cycle << "個cycles" << endl;
+    outfile << "需要花" << cycle << "個cycles"
+            << "\n";
 
     // 暫存器號碼
     for (int i = 0; i < 32; i++)
     {
         outfile << "$" << i << "\t";
     }
-    outfile << endl;
+    outfile << "\n";
 
     // 暫存器的值
     for (int i = 0; i < 32; i++)
     {
         outfile << registerFile.registers[i] << "\t";
     }
-    outfile << endl;
+    outfile << "\n";
 
     // 記憶體號碼
     for (int i = 0; i < 32; i++)
     {
         outfile << "W" << i << "\t";
     }
-    outfile << endl;
+    outfile << "\n";
 
     // 記憶體的值
     for (int i = 0; i < 32; i++)
     {
         outfile << memory.data[i] << "\t";
     }
-    outfile << endl;
-
-    // 關檔
-    outfile.close();
+    outfile << "\n";
 }
 
 #endif

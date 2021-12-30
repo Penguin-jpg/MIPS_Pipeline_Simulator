@@ -8,6 +8,9 @@
 #### EX Hazard版
 測試完成
 
+#### Load-Use Hazard版
+測試完成
+
 #### Double Hazard版
 測試完成
 
