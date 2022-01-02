@@ -12,18 +12,10 @@
 #include "Instruction.h"
 using namespace std;
 
-int stall = 0;      // stall數
-bool taken = false; // beq是否要taken
-
-class Stage
-{
-public:
-    bool finish;
-    Stage *previousStage;
-    Stage *nextStage;
-
-    Stage(Stage *previousStage) : finish(false), previousStage(previousStage), nextStage(nullptr) {}
-};
+int stall = 0;                     // stall數
+bool taken = false;                // beq是否要taken
+RegisterFile registerFile;         // register file
+vector<Instruction> executings(5); // 暫存每個階段目前正在做的指令
 
 // IF階段(包含IF/ID)
 struct IFStage
@@ -34,7 +26,7 @@ struct IFStage
     IFStage() : pc(0), finish(false) {}
 
     // 抓取指令
-    void fetch(fstream &outfile, const vector<vector<string>> &instructions, vector<Instruction> &executings, bool &idFinish)
+    void fetch(fstream &outfile, const vector<vector<string>> &instructions, bool &idFinish)
     {
         finish = false; // IF階段開始
 
@@ -48,6 +40,7 @@ struct IFStage
             return;
         }
 
+        // 錯誤訊息
         if (pc >= numOfInstructions)
         {
             cout << "pc超過上限\n"
@@ -89,7 +82,7 @@ struct IDStage
     IDStage() : readData1(0), readData2(0), finish(true) {}
 
     // 解碼指令
-    void decode(fstream &outfile, vector<Instruction> &executings, RegisterFile &registerFile, Control &exeControl, bool &zero, Control &memControl, bool &exeFinish)
+    void decode(fstream &outfile, const Control &exeControl, bool &zero, const Control &memControl, bool &exeFinish)
     {
         // debug
         // cout << "id: " << endl;
@@ -107,6 +100,19 @@ struct IDStage
             outfile << "\t" << executings[1].operation << ": ID\n"; // 重複做ID
             finish = false;
             return;
+        }
+
+        // 如果是taken，不輸出抓錯的指令的ID
+        if (taken)
+        {
+            taken = false;
+            finish = true;
+            exeFinish = false;
+            return;
+        }
+        else
+        {
+            outfile << "\t" << executings[1].operation << ": ID\n";
         }
 
         // 取出變數並調整控制信號
@@ -138,17 +144,7 @@ struct IDStage
         }
 
         // 偵測hazard
-        detectHazard(executings, exeControl, memControl, wait);
-
-        // 如果是taken，不輸出抓錯的指令的ID
-        if (taken)
-        {
-            taken = false;
-        }
-        else
-        {
-            outfile << "\t" << executings[1].operation << ": ID\n";
-        }
+        detectHazard(exeControl, memControl, wait);
 
         // 如果stall數不等2時，代表沒有stall或等待beq結果，而beq指令可以先往下傳
         if (stall != 2)
@@ -162,7 +158,7 @@ struct IDStage
     }
 
     // 偵測hazard
-    void detectHazard(vector<Instruction> &executings, Control &exeControl, Control &memControl, bool wait)
+    void detectHazard(const Control &exeControl, const Control &memControl, bool wait)
     {
         // EX hazard或load-use hazard
         // load-use hazard也能在這邊檢查的原因是在沒有forwarding的情況下需要做2次stall
@@ -196,7 +192,7 @@ struct EXEStage
     EXEStage() : ALUResult(0), writeData(0), zero(false), finish(false) {}
 
     // 執行指令
-    void execute(fstream &outfile, vector<Instruction> &executings, RegisterFile &registerFile, IFStage &ifStage, IDStage &idStage, bool &memFinish)
+    void execute(fstream &outfile, IFStage &ifStage, IDStage &idStage, bool &memFinish)
     {
         // 如果指令不為空
         if (!executings[2].isEmpty())
@@ -238,6 +234,7 @@ struct EXEStage
             {
                 ifStage.pc += executings[3].offset;
                 taken = true;
+                zero = false;
             }
             else
             {
@@ -271,7 +268,7 @@ struct MEMStage
     MEMStage() : ALUResult(0), writeData(0), readData(0), finish(false) {}
 
     // 存取記憶體
-    void accessMemory(fstream &outfile, vector<Instruction> &executings, RegisterFile &registerFile, vector<int> &data, EXEStage &exeStage, bool &wbFinish)
+    void accessMemory(fstream &outfile, vector<int> &data, EXEStage &exeStage, bool &wbFinish)
     {
         // debug
         // cout << "mem: " << endl;
@@ -333,7 +330,7 @@ struct WBStage
     WBStage() : ALUResult(0), writeData(0), finish(false) {}
 
     // 寫回暫存器
-    void writeBack(fstream &outfile, vector<Instruction> &executings, RegisterFile &registerFile, MEMStage &memStage)
+    void writeBack(fstream &outfile, MEMStage &memStage)
     {
         // debug
         // cout << "wb: " << endl;

@@ -92,9 +92,10 @@ void readInstructions(const string &path, vector<vector<string>> &instructions)
 // 建立對照表
 void buildTable()
 {
+    string key = "";
     for (int i = 0; i < 32; i++)
     {
-        string key = "$" + to_string(i);
+        key = "$" + to_string(i);
         REGISTER_TABLE[key] = i;
     }
 }
@@ -119,7 +120,7 @@ void printInstructions(const vector<vector<string>> &instructions)
 }
 
 // 將剩餘資訊寫出
-void writeInfo(fstream &outfile, const RegisterFile &registerFile, const Memory &memory, int cycle)
+void writeInfo(fstream &outfile, const RegisterFile &registerFile, const Memory &memory, const int cycle)
 {
     outfile << endl;
     outfile << "需要花" << cycle << "個cycles"

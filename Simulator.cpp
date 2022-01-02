@@ -2,9 +2,7 @@
 #include <fstream>
 #include <sstream>
 #include <vector>
-#include "Utility.h"
 #include "Stages.h"
-#include "RegisterFile.h"
 #include "Memory.h"
 using namespace std;
 
@@ -15,8 +13,7 @@ int main()
     Memory memory;
     // 讀取指令
     readInstructions("memory.txt", memory.instructions);
-    // register file
-    RegisterFile registerFile;
+
     // cycle數
     int cycle = 1;
     // 寫檔
@@ -27,8 +24,6 @@ int main()
     EXEStage exeStage;
     MEMStage memStage;
     WBStage wbStage;
-    // 暫存每個階段目前正在做的指令
-    vector<Instruction> executings(5);
 
     // 執行
     while (true)
@@ -39,32 +34,32 @@ int main()
         // 執行WB
         if (!wbStage.finish)
         {
-            wbStage.writeBack(outfile, executings, registerFile, memStage);
+            wbStage.writeBack(outfile, memStage);
         }
 
         // 執行MEM
         if (!memStage.finish)
         {
-            memStage.accessMemory(outfile, executings, registerFile, memory.data, exeStage, wbStage.finish);
+            memStage.accessMemory(outfile, memory.data, exeStage, wbStage.finish);
         }
 
         // 執行EXE
         if (!exeStage.finish)
         {
-            exeStage.execute(outfile, executings, registerFile, ifStage, idStage, memStage.finish);
+            exeStage.execute(outfile, ifStage, idStage, memStage.finish);
         }
 
         // 執行ID
         if (!idStage.finish || stall > 0)
         {
-            idStage.decode(outfile, executings, registerFile, exeStage.control, exeStage.zero, memStage.control, exeStage.finish);
+            idStage.decode(outfile, exeStage.control, exeStage.zero, memStage.control, exeStage.finish);
         }
 
         // 檢查是否抓完所有指令了
         if (!ifStage.hasFetchedAll())
         {
             // 抓取指令
-            ifStage.fetch(outfile, memory.instructions, executings, idStage.finish);
+            ifStage.fetch(outfile, memory.instructions, idStage.finish);
         }
         else
         {
