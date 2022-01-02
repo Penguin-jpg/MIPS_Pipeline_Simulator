@@ -15,14 +15,10 @@ int main()
     Memory memory;
     // 讀取指令
     readInstructions("memory.txt", memory.instructions);
-    // beq是否要taken
-    bool taken = false;
     // register file
     RegisterFile registerFile;
     // cycle數
     int cycle = 1;
-    // stall計數器
-    int stall = 0;
     // 寫檔
     fstream outfile("result.txt", ios::out);
     // 五個階段
@@ -32,7 +28,7 @@ int main()
     MEMStage memStage;
     WBStage wbStage;
     // 暫存每個階段目前正在做的指令
-    vector<vector<string>> executings(5, vector<string>(4));
+    vector<Instruction> executings(5);
 
     // 執行
     while (true)
@@ -43,36 +39,36 @@ int main()
         // 執行WB
         if (!wbStage.finish)
         {
-            wbStage.writeBack(outfile, registerFile, executings, memStage);
+            wbStage.writeBack(outfile, executings, registerFile, memStage);
         }
 
         // 執行MEM
         if (!memStage.finish)
         {
-            memStage.accessMemory(outfile, executings, registerFile, memory.data, stall, exeStage, wbStage.finish);
+            memStage.accessMemory(outfile, executings, registerFile, memory.data, exeStage, wbStage.finish);
         }
 
         // 執行EXE
         if (!exeStage.finish)
         {
-            exeStage.execute(outfile, executings, registerFile, stall, taken, ifStage, idStage, memStage.finish);
+            exeStage.execute(outfile, executings, registerFile, ifStage, idStage, memStage.finish);
         }
 
         // 執行ID
         if (!idStage.finish || stall > 0)
         {
-            idStage.decode(outfile, executings, registerFile, stall, exeStage.control, exeStage.rd, memStage.control, memStage.rd, taken, exeStage.finish);
+            idStage.decode(outfile, executings, registerFile, exeStage.control, exeStage.zero, memStage.control, exeStage.finish);
         }
 
-        // 抓完所有指令了
-        if (ifStage.pc == numOfInstructions)
-        {
-            ifStage.finish = true;
-        }
-        else // 執行IF(測試完成)
+        // 檢查是否抓完所有指令了
+        if (!ifStage.hasFetchedAll())
         {
             // 抓取指令
-            ifStage.fetch(outfile, memory.instructions, executings, stall, idStage.finish);
+            ifStage.fetch(outfile, memory.instructions, executings, idStage.finish);
+        }
+        else
+        {
+            ifStage.finish = true;
         }
 
         // 當全部階段做完時，stall完成一次
@@ -86,6 +82,8 @@ int main()
         {
             break;
         }
+
+        // 經過一個cycle
         cycle++;
     }
 

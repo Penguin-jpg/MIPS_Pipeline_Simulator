@@ -9,7 +9,21 @@
 #include "Control.h"
 #include "RegisterFile.h"
 #include "Utility.h"
+#include "Instruction.h"
 using namespace std;
+
+int stall = 0;      // stall數
+bool taken = false; // beq是否要taken
+
+class Stage
+{
+public:
+    bool finish;
+    Stage *previousStage;
+    Stage *nextStage;
+
+    Stage(Stage *previousStage) : finish(false), previousStage(previousStage), nextStage(nullptr) {}
+};
 
 // IF階段(包含IF/ID)
 struct IFStage
@@ -17,10 +31,10 @@ struct IFStage
     int pc;      // pc暫存器
     bool finish; // 階段是否完成
 
-    IFStage() : pc(0) {}
+    IFStage() : pc(0), finish(false) {}
 
     // 抓取指令
-    void fetch(fstream &outfile, const vector<vector<string>> &instructions, vector<vector<string>> &executings, int stall, bool &idFinish)
+    void fetch(fstream &outfile, const vector<vector<string>> &instructions, vector<Instruction> &executings, bool &idFinish)
     {
         finish = false; // IF階段開始
 
@@ -34,18 +48,20 @@ struct IFStage
             return;
         }
 
-        executings[0] = instructions[pc]; // 儲存正在執行的指令
-        executings[1] = executings[0];    // 抓取的指令傳給ID階段
-        executings[0][0] = "";            // 清除指令避免影響後續判斷
+        if (pc >= numOfInstructions)
+        {
+            cout << "pc超過上限\n"
+                 << endl;
+        }
+
+        executings[0].readInfo(instructions[pc]); // 儲存正在執行的指令
+        executings[1] = move(executings[0]);      // 抓取的指令傳給ID階段
+        executings[0].clear();                    // 清除指令避免影響後續判斷
 
         // debug
         // cout << "if: "
         //      << "pc: " << pc << endl;
-        // for (int i = 0; i < 4; i++)
-        // {
-        //     cout << executings[0][i] << " ";
-        // }
-        // cout << endl;
+        // cout << executings[1].operation << endl;
 
         // pc+4
         pc++;
@@ -53,32 +69,33 @@ struct IFStage
         finish = true;    // IF階段完成
         idFinish = false; // ID階段開始
     }
+
+    // 是否抓完所有指令
+    bool hasFetchedAll()
+    {
+        return pc == numOfInstructions;
+    }
 };
 
 // ID階段(包含ID/EX)
 struct IDStage
 {
-    int rs;            // 來源暫存器1
-    int rt;            // 來源/目標暫存器2
-    int rd;            // 目標暫存器
-    int writeRegister; // 目標暫存器
-    int offset;        // 位移(給lw、sw、beq使用)
-    string operation;  // 要做的運算
-    bool finish;       // 階段是否完成
-    Control control;   //控制信號
+    int readData1;   // 讀出的資料1
+    int readData2;   // 讀出的資料2
+    bool finish;     // 階段是否完成
+    Control control; //控制信號
 
     // finish初始值為true是避免第一次就跑進來做
-    IDStage() : rd(0), writeRegister(0), offset(0), operation(""), finish(true) {}
+    IDStage() : readData1(0), readData2(0), finish(true) {}
 
     // 解碼指令
-    void decode(fstream &outfile, vector<vector<string>> &executings, RegisterFile &registerFile, int &stall,
-                Control &exeControl, int exeRd, Control &memControl, int memRd, bool &taken, bool &exeFinish)
+    void decode(fstream &outfile, vector<Instruction> &executings, RegisterFile &registerFile, Control &exeControl, bool &zero, Control &memControl, bool &exeFinish)
     {
         // debug
         // cout << "id: " << endl;
         // for (int i = 0; i < 4; i++)
         // {
-        //     cout << executings[1][i] << " ";
+        //     cout << executings[1].operation << " ";
         // }
         // cout << endl;
 
@@ -87,107 +104,57 @@ struct IDStage
         // 如果要stall
         if (stall > 0)
         {
-            outfile << "\t" << executings[1][0] << ": ID\n"; // 重複做ID
+            outfile << "\t" << executings[1].operation << ": ID\n"; // 重複做ID
             finish = false;
             return;
         }
 
         // 取出變數並調整控制信號
-        if (executings[1][0] == "add")
+        if (executings[1].operation == "add" || executings[1].operation == "sub")
         {
-            operation = "add";
-            rd = getRegister(executings[1][1]);
-            rs = getRegister(executings[1][2]);
-            rt = getRegister(executings[1][3]);
+            readData1 = registerFile.registers[executings[1].rs];
+            readData2 = registerFile.registers[executings[1].rt];
             control.controlForRFormat();
         }
-        else if (executings[1][0] == "sub")
+        else if (executings[1].operation == "lw")
         {
-            operation = "sub";
-            rd = getRegister(executings[1][1]);
-            rs = getRegister(executings[1][2]);
-            rt = getRegister(executings[1][3]);
-            control.controlForRFormat();
-        }
-        else if (executings[1][0] == "lw")
-        {
-            operation = "lw";
-            rt = getRegister(executings[1][1]);
-            try
-            {
-                offset = stol(executings[1][2]) / 4; // 除以4轉位置
-            }
-            catch (...)
-            {
-                cout << "lw gone wrong\n";
-            }
-
-            rs = -1; // 因為題目設計的關係，所以不用讀取
-            rd = rt; // 為了hazard判斷，讓rd=rt
             control.controlForLw();
         }
-        else if (executings[1][0] == "sw")
+        else if (executings[1].operation == "sw")
         {
-            operation = "sw";
-            rt = getRegister(executings[1][1]);
-            try
-            {
-                offset = stol(executings[1][2]) / 4; // 除以4轉位置
-            }
-            catch (...)
-            {
-                cout << "sw gone wrong\n";
-            }
-
-            rs = -1; // 因為題目設計的關係，所以不用讀取
-            rd = rt; // 為了hazard判斷，讓rd=rt
+            readData2 = registerFile.registers[executings[1].rt];
             control.controlForSw();
         }
-        else if (executings[1][0] == "beq")
+        else if (executings[1].operation == "beq")
         {
-            operation = "beq";
-            rt = getRegister(executings[1][1]);
-            rs = getRegister(executings[1][2]);
-            try
-            {
-                offset = stol(executings[1][3]);
-            }
-            catch (...)
-            {
-                cout << "beq gone wrong\n";
-            }
-            rd = rt;
             control.controlForBeq();
 
             // beq移到在ID得知
-            if (registerFile.registers[rs] == registerFile.registers[rt])
+            if (registerFile.registers[executings[1].rs] == registerFile.registers[executings[1].rt])
             {
                 wait = true;
+                zero = true;
             }
         }
 
         // 偵測hazard
-        detectHazard(outfile, exeControl, exeRd, memControl, memRd, stall, wait);
+        detectHazard(executings, exeControl, memControl, wait);
 
-        // 如果是taken
+        // 如果是taken，不輸出抓錯的指令的ID
         if (taken)
         {
-            // 原本抓的指令清掉
-            executings[1][0] = "";
             taken = false;
         }
-
-        // 如果要做該指令
-        if (executings[1][0] != "")
+        else
         {
-            outfile << "\t" << executings[1][0] << ": ID\n";
+            outfile << "\t" << executings[1].operation << ": ID\n";
         }
 
-        // 如果不是stall數小於2(不需重做ID)
-        if (stall < 2)
+        // 如果stall數不等2時，代表沒有stall或等待beq結果，而beq指令可以先往下傳
+        if (stall != 2)
         {
-            executings[2] = executings[1]; // 將指令傳到EXE階段
-            executings[1][0] = "";         // 清除指令避免影響後續判斷
+            executings[2] = move(executings[1]); // 將指令傳到EXE階段
+            executings[1].clear();               // 清除指令避免影響後續判斷
         }
 
         finish = true;     // ID階段完成
@@ -195,17 +162,16 @@ struct IDStage
     }
 
     // 偵測hazard
-    void detectHazard(fstream &outfile, Control &exeControl, int exeRd, Control &memControl, int memRd, int &stall, bool wait)
+    void detectHazard(vector<Instruction> &executings, Control &exeControl, Control &memControl, bool wait)
     {
         // EX hazard或load-use hazard
         // load-use hazard也能在這邊檢查的原因是在沒有forwarding的情況下需要做2次stall
-        if ((exeControl.regWrite || exeControl.memRead) && exeRd != 0 && (exeRd == rs || exeRd == rt))
+        if ((exeControl.regWrite || exeControl.memRead) && executings[2].rd != 0 && (executings[2].rd == executings[1].rs || executings[2].rd == executings[1].rt))
         {
-            // outfile << "load-use hazard here\n";
             stall = 2;       // 做兩次stall
             control.flush(); // 控制信號做flush
         }
-        else if (memControl.regWrite && memRd != 0 && (memRd == rs || memRd == rt)) // MEM hazard(只有在確定不是EX hazard的時候才做)
+        else if (memControl.regWrite && executings[3].rd != 0 && (executings[3].rd == executings[1].rs || executings[3].rd == executings[1].rt)) // MEM hazard(只有在確定不是EX hazard的時候才做)
         {
             stall = 2;
             control.flush();
@@ -221,72 +187,56 @@ struct IDStage
 // EXE階段(包含EXE/MEM)
 struct EXEStage
 {
-    int rs;           // 來源暫存器1
-    int rt;           // 來源/目標暫存器2
-    int rd;           // 目標暫存器
-    string operation; // 要執行的運算
-    int ALUResult;    // ALU的運算結果
-    int writeData;    // 要寫入記憶體的資料
-    int offset;       // 位移
-    bool zero;        // 計算結果是否為0
-    bool finish;      // 階段是否完成
-    Control control;  // 控制信號
+    int ALUResult;   // ALU的運算結果
+    int writeData;   // 要寫入記憶體的資料
+    bool zero;       // 計算結果是否為0
+    bool finish;     // 階段是否完成
+    Control control; // 控制信號
 
-    EXEStage() : rs(0), rt(0), rd(0), operation(""), ALUResult(0), writeData(0), offset(0), zero(false), finish(false) {}
+    EXEStage() : ALUResult(0), writeData(0), zero(false), finish(false) {}
 
     // 執行指令
-    void execute(fstream &outfile, vector<vector<string>> &executings, RegisterFile &registerFile, int &stall, bool &taken, IFStage &ifStage, IDStage &idStage, bool &memFinish)
+    void execute(fstream &outfile, vector<Instruction> &executings, RegisterFile &registerFile, IFStage &ifStage, IDStage &idStage, bool &memFinish)
     {
         // 如果指令不為空
-        if (executings[2][0] != "")
+        if (!executings[2].isEmpty())
         {
             // debug
             // cout << "exe: " << endl;
             // for (int i = 0; i < 4; i++)
             // {
-            //     cout << executings[2][i] << " ";
+            //     cout << executings[2].operation << " ";
             // }
             // cout << endl;
 
             // 將資訊傳給EXE
             control = idStage.control;
-            rs = idStage.rs;
-            rt = idStage.rt;
-            rd = idStage.rd;
-            offset = idStage.offset;
-            operation = idStage.operation;
 
-            outfile << "\t" << executings[2][0] << ": EX " << control.regDst << control.ALUSrc << " " << control.branch
+            outfile << "\t" << executings[2].operation << ": EX " << control.regDst << control.ALUSrc << " " << control.branch
                     << control.memRead << control.memWrite << " " << control.regWrite << control.memToReg << "\n";
 
-            executings[3] = executings[2]; // 將指令傳給MEM階段
-            executings[2][0] = "";         // 清除指令避免影響後續判斷
+            executings[3] = move(executings[2]); // 將指令傳給MEM階段
+            executings[2].clear();               // 清除指令避免影響後續判斷
         }
 
         // 執行特定運算
-        if (operation == "add")
+        if (executings[3].operation == "add")
         {
-            ALUResult = registerFile.registers[rs] + registerFile.registers[rt];
+            ALUResult = idStage.readData1 + idStage.readData2;
         }
-        else if (operation == "sub")
+        else if (executings[3].operation == "sub")
         {
-            ALUResult = registerFile.registers[rs] - registerFile.registers[rt];
+            ALUResult = idStage.readData1 - idStage.readData2;
         }
-        else if (operation == "sw")
+        else if (executings[3].operation == "sw")
         {
-            writeData = registerFile.registers[rt];
+            writeData = idStage.readData2;
         }
-        else if (operation == "beq")
+        else if (executings[3].operation == "beq")
         {
-            // 當taken時，啟動zero控制信號
-            if (registerFile.registers[rs] == registerFile.registers[rt])
-            {
-                zero = true;
-            }
             if (control.branch && zero)
             {
-                // outfile << "taken!!" << endl;
-                ifStage.pc += offset;
+                ifStage.pc += executings[3].offset;
                 taken = true;
             }
             else
@@ -302,13 +252,8 @@ struct EXEStage
     // 初始化
     void init()
     {
-        rs = 0;
-        rt = 0;
-        rd = 0;
-        operation = "";
         ALUResult = 0;
         writeData = 0;
-        offset = 0;
         zero = false;
         control.flush();
     }
@@ -317,54 +262,50 @@ struct EXEStage
 // MEM階段(包含MEM/WB)
 struct MEMStage
 {
-    int rd;          // 目標暫存器
     int ALUResult;   // 由EXE階段來的ALU結果
     int writeData;   // 要寫入記憶體的資料
     int readData;    // 讀出的資料
-    int offset;      // 位移
     bool finish;     // 階段是否完成
     Control control; // 控制信號
 
-    MEMStage() : rd(0), ALUResult(0), writeData(0), offset(0), finish(false) {}
+    MEMStage() : ALUResult(0), writeData(0), readData(0), finish(false) {}
 
     // 存取記憶體
-    void accessMemory(fstream &outfile, vector<vector<string>> &executings, RegisterFile &registerFile, vector<int> &data, int &stall, EXEStage &exeStage, bool &wbFinish)
+    void accessMemory(fstream &outfile, vector<Instruction> &executings, RegisterFile &registerFile, vector<int> &data, EXEStage &exeStage, bool &wbFinish)
     {
         // debug
         // cout << "mem: " << endl;
         // for (int i = 0; i < 4; i++)
         // {
-        //     cout << executings[3][i] << " ";
+        //     cout << executings[3].operation << " ";
         // }
         // cout << endl;
 
         // 如果指令不為空
-        if (executings[3][0] != "")
+        if (!executings[3].isEmpty())
         {
             // 將資訊傳給MEM
             control = exeStage.control;
-            rd = exeStage.rd;
             ALUResult = exeStage.ALUResult;
             writeData = exeStage.writeData;
-            offset = exeStage.offset;
 
             // 初始化EXE，避免影響後續判斷
             exeStage.init();
 
-            outfile << "\t" << executings[3][0] << ": MEM " << control.branch << control.memRead << control.memWrite << " " << control.regWrite << control.memToReg << "\n";
+            outfile << "\t" << executings[3].operation << ": MEM " << control.branch << control.memRead << control.memWrite << " " << control.regWrite << control.memToReg << "\n";
 
-            executings[4] = executings[3]; // 將指令傳給WB階段
-            executings[3][0] = "";         // 清除指令避免影響後續判斷
+            executings[4] = move(executings[3]); // 將指令傳給WB階段
+            executings[3].clear();               // 清除指令避免影響後續判斷
         }
 
         // 如果要讀取記憶體
         if (control.memRead)
         {
-            readData = data[offset];
+            readData = data[executings[4].offset];
         }
         else if (control.memWrite) // 如果要寫入記憶體
         {
-            data[offset] = writeData;
+            data[executings[4].offset] = writeData;
         }
 
         finish = true;    // MEM階段完成
@@ -374,11 +315,9 @@ struct MEMStage
     // 初始化
     void init()
     {
-        rd = 0;
         ALUResult = 0;
         writeData = 0;
         readData = 0;
-        offset = 0;
         control.flush();
     }
 };
@@ -386,39 +325,37 @@ struct MEMStage
 // WB階段
 struct WBStage
 {
-    int rd;          // 目標暫存器
     int ALUResult;   // 由EXE階段來的ALU結果
-    int readData;    // 由MEM階段讀出的資料
+    int writeData;   // 要寫回的資料
     bool finish;     // 階段是否完成
     Control control; // 控制信號
 
-    WBStage() : readData(0), rd(0), finish(false) {}
+    WBStage() : ALUResult(0), writeData(0), finish(false) {}
 
     // 寫回暫存器
-    void writeBack(fstream &outfile, RegisterFile &registerFile, vector<vector<string>> &executings, MEMStage &memStage)
+    void writeBack(fstream &outfile, vector<Instruction> &executings, RegisterFile &registerFile, MEMStage &memStage)
     {
         // debug
         // cout << "wb: " << endl;
         // for (int i = 0; i < 4; i++)
         // {
-        //     cout << executings[4][i] << " ";
+        //     cout << executings[4].operation << " ";
         // }
         // cout << endl;
 
         // 如果指令不為空
-        if (executings[4][0] != "")
+        if (!executings[4].isEmpty())
         {
             // 將資訊傳給WB
             control = memStage.control;
             ALUResult = memStage.ALUResult;
-            readData = memStage.readData;
-            rd = memStage.rd;
+            writeData = memStage.readData;
 
             // 初始化MEM，避免影響後續判斷
             memStage.init();
 
-            outfile << "\t" << executings[4][0] << ": WB " << control.regWrite << control.memToReg << "\n";
-            executings[4][0] = ""; // 清除指令避免影響後續判斷
+            outfile << "\t" << executings[4].operation << ": WB " << control.regWrite << control.memToReg << "\n";
+            executings[4].clear(); // 清除指令避免影響後續判斷
         }
 
         // 如果需要寫入暫存器
@@ -427,11 +364,11 @@ struct WBStage
             // 寫入ALU結果
             if (control.memToReg == '0')
             {
-                registerFile.registers[rd] = ALUResult;
+                registerFile.registers[executings[4].rd] = ALUResult;
             }
             else if (control.memToReg == '1') // 寫入記憶體的資料
             {
-                registerFile.registers[rd] = readData;
+                registerFile.registers[executings[4].rd] = writeData;
             }
         }
 
