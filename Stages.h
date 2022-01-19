@@ -35,7 +35,6 @@ struct IFStage
         // 如果要stall
         if (stall > 0)
         {
-            finish = false;
             idFinish = false;
             return;
         }
