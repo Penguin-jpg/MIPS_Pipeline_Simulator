@@ -52,7 +52,7 @@ int main()
         // 執行ID
         if (!idStage.finish || stall > 0)
         {
-            idStage.decode(outfile, exeStage.control, exeStage.zero, memStage.control, exeStage.finish);
+            idStage.decode(outfile, exeStage.control, memStage.control, exeStage.finish);
         }
 
         // 檢查是否抓完所有指令了

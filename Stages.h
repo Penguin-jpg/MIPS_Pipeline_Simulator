@@ -81,7 +81,7 @@ struct IDStage
     IDStage() : readData1(0), readData2(0), finish(true) {}
 
     // 解碼指令
-    void decode(fstream &outfile, const Control &exeControl, bool &zero, const Control &memControl, bool &exeFinish)
+    void decode(fstream &outfile, const Control &exeControl, const Control &memControl, bool &exeFinish)
     {
         // debug
         // cout << "id: " << endl;
@@ -138,7 +138,6 @@ struct IDStage
             if (registerFile.registers[executings[1].rs] == registerFile.registers[executings[1].rt])
             {
                 wait = true;
-                zero = true;
             }
         }
 
@@ -229,6 +228,11 @@ struct EXEStage
         }
         else if (executings[3].operation == "beq")
         {
+            if (registerFile.registers[executings[1].rs] == registerFile.registers[executings[1].rt])
+            {
+                zero = true;
+            }
+
             if (control.branch && zero)
             {
                 ifStage.pc += executings[3].offset;
